@@ -107,7 +107,9 @@ function updateTanggal() {
 }
 
 function renderSemua() {
-    const saldoUtama = (state.saldoTunai || 0) + (state.saldoBank || 0) + (state.kasLaciAwal || 0) + (state.bersihHariIni || 0);
+    // Total Saldo Utama menghitung seluruh aset aktif (termasuk pending QRIS & Transfer hari ini)
+    const saldoUtama = (state.saldoTunai || 0) + (state.saldoBank || 0) + (state.kasLaciAwal || 0) + (state.bersihHariIni || 0) + (state.qrisHariIni || 0) + (state.transferHariIni || 0);
+    
     setElText('valSaldoUtama', formatRp(saldoUtama));
     setElText('valSaldoTunai', formatRp(state.saldoTunai));
     setElText('valSaldoBank', formatRp(state.saldoBank));
@@ -115,9 +117,20 @@ function renderSemua() {
     setElText('valBersihHariIni', formatRp(state.bersihHariIni));
     setElText('valQrisHariIni', formatRp(state.qrisHariIni));
     setElText('valTransferHariIni', formatRp(state.transferHariIni));
+
+    // Rincian Modal Setorkan
+    const subtotalTunai = (state.kasLaciAwal || 0) + (state.bersihHariIni || 0);
+    const subtotalBank = (state.qrisHariIni || 0) + (state.transferHariIni || 0);
+    
     setElText('setorKasLaci', formatRp(state.kasLaciAwal));
     setElText('setorBersih', formatRp(state.bersihHariIni));
-    setElText('setorTotal', formatRp((state.kasLaciAwal || 0) + (state.bersihHariIni || 0)));
+    setElText('setorTunaiTotal', formatRp(subtotalTunai));
+    
+    setElText('setorQris', formatRp(state.qrisHariIni));
+    setElText('setorTransfer', formatRp(state.transferHariIni));
+    setElText('setorBankTotal', formatRp(subtotalBank));
+
+    setElText('setorTotal', formatRp(subtotalTunai + subtotalBank));
     setElText('totalTransaksi', `${state.riwayat ? state.riwayat.length : 0} transaksi`);
     renderRiwayat();
     renderKategoriDropdown();
@@ -231,15 +244,20 @@ function handleTransaksiTunai(e) {
     simpanData(); renderSemua(); tutupModal('modalTransaksiTunai');
 }
 
+// ALUR BARU: QRIS / TRANSFER TIDAK LANGSUNG MASUK SALDO BANK
 function handleTransaksiDigital(e) {
     e.preventDefault();
     const metode = document.getElementById('inputMetodeDigital').value;
     let ket = document.getElementById('inputKetDigital').value.trim();
     const nominal = parseInt(document.getElementById('inputNominalDigital').value, 10);
     if (!ket) ket = 'Penjualan Toko';
-    state.saldoBank += nominal;
-    if (metode === 'QRIS') state.qrisHariIni += nominal;
-    else state.transferHariIni += nominal;
+    
+    // Hanya menambah indikator harian (TIDAK langsung masuk saldoBank)
+    if (metode === 'QRIS') {
+        state.qrisHariIni += nominal;
+    } else {
+        state.transferHariIni += nominal;
+    }
 
     const w = getWaktuLengkap();
     if (!state.riwayat) state.riwayat = [];
@@ -273,15 +291,43 @@ function handleSaldoManual(e) {
     simpanData(); renderSemua(); tutupModal('modalSaldoManual');
 }
 
+// ALUR BARU: SAAT SETOR, QRIS & TF BARU MASUK KE SALDO REKENING BANK
 function eksekusiSetorkan() {
-    const totalUangLaci = state.kasLaciAwal + state.bersihHariIni;
-    state.saldoTunai += totalUangLaci;
+    const totalTunaiSetor = (state.kasLaciAwal || 0) + (state.bersihHariIni || 0);
+    const totalBankSetor = (state.qrisHariIni || 0) + (state.transferHariIni || 0);
+
+    // Saldo Tunai bertambah dari uang fisik laci
+    state.saldoTunai += totalTunaiSetor;
+    
+    // Saldo Bank bertambah dari QRIS + Transfer hari ini
+    state.saldoBank += totalBankSetor;
+
+    const totalSetoran = totalTunaiSetor + totalBankSetor;
     const w = getWaktuLengkap();
     if (!state.riwayat) state.riwayat = [];
-    state.riwayat.push({ id: nextId++, waktu: w.jam, timestamp: w.timestamp, kategori: 'Setoran', ket: `Tutup Kasir: Setor ${formatRp(totalUangLaci)} ke Saldo Tunai`, tipe: 'TRANSFER', nominal: totalUangLaci, sumber: 'SETOR' });
-    state.kasLaciAwal = 0; state.bersihHariIni = 0; state.qrisHariIni = 0; state.transferHariIni = 0;
-    simpanData(); renderSemua(); tutupModal('modalSetorkan');
-    alert('✅ Penutupan kasir berhasil!');
+    state.riwayat.push({ 
+        id: nextId++, 
+        waktu: w.jam, 
+        timestamp: w.timestamp, 
+        kategori: 'Setoran', 
+        ket: `Tutup Kasir: Setor Tunai (${formatRp(totalTunaiSetor)}) & Bank (${formatRp(totalBankSetor)})`, 
+        tipe: 'TRANSFER', 
+        nominal: totalSetoran,
+        nominalTunai: totalTunaiSetor,
+        nominalBank: totalBankSetor,
+        sumber: 'SETOR' 
+    });
+
+    // Reset seluruh indikator harian ke Rp 0
+    state.kasLaciAwal = 0;
+    state.bersihHariIni = 0;
+    state.qrisHariIni = 0;
+    state.transferHariIni = 0;
+
+    simpanData(); 
+    renderSemua(); 
+    tutupModal('modalSetorkan');
+    alert('✅ Penutupan kasir berhasil! Tunai telah masuk ke Saldo Tunai dan Digital telah masuk ke Rekening Bank.');
 }
 
 function bukaEditRiwayat(id) {
@@ -324,11 +370,19 @@ function terapkanEfekSaldo(item, nominal) {
         case 'TUNAI_MASUK': state.bersihHariIni += nominal; break;
         case 'PENGELUARAN_TUNAI': state.saldoTunai -= nominal; break;
         case 'PENGELUARAN_BANK': state.saldoBank -= nominal; break;
-        case 'QRIS': state.saldoBank += nominal; state.qrisHariIni += nominal; break;
-        case 'TRANSFER': state.saldoBank += nominal; state.transferHariIni += nominal; break;
+        case 'QRIS': state.qrisHariIni += nominal; break;
+        case 'TRANSFER': state.transferHariIni += nominal; break;
         case 'MANUAL_TUNAI': state.saldoTunai += (item.tipe === 'MASUK' ? nominal : -nominal); break;
         case 'MANUAL_BANK': state.saldoBank += (item.tipe === 'MASUK' ? nominal : -nominal); break;
-        case 'SETOR': state.saldoTunai += nominal; break;
+        case 'SETOR':
+            if (item.nominalTunai !== undefined && item.nominalBank !== undefined) {
+                const ratio = item.nominal > 0 ? (nominal / item.nominal) : 1;
+                state.saldoTunai += item.nominalTunai * ratio;
+                state.saldoBank += item.nominalBank * ratio;
+            } else {
+                state.saldoTunai += nominal;
+            }
+            break;
     }
 }
 
