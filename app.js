@@ -10,8 +10,8 @@ const firebaseConfig = {
     databaseURL: "https://garasi-keuangan-default-rtdb.asia-southeast1.firebasedatabase.app"
 };
 
-const STORAGE_KEY = 'GARASI_FOTOCOPY_DATA_V5';
-let db = null, dbRef = null, isConnectedToCloud = false, chartInstance = null, nextId = 1;
+const STORAGE_KEY = 'GARASI_FOTOCOPY_DATA_V6';
+let db = null, dbRef = null, isConnectedToCloud = false, chartInstance = null;
 
 let state = {
     saldoTunai: 0, saldoBank: 0, kasLaciAwal: 0, bersihHariIni: 0, qrisHariIni: 0, transferHariIni: 0,
@@ -19,51 +19,117 @@ let state = {
     riwayat: []
 };
 
-const connectionTimeout = setTimeout(() => { if (!isConnectedToCloud) muatLokal(); }, 3500);
+// META UNTUK TRACKING OFFLINE EDITS / AUTO-SYNC
+let meta = {
+    nextId: 1,
+    needsSync: false,
+    lastModified: Date.now()
+};
 
-try {
-    if (typeof firebase !== 'undefined') {
-        firebase.initializeApp(firebaseConfig);
-        db = firebase.database();
-        dbRef = db.ref('keuangan_garasi_fotocopy');
-        
-        dbRef.on('value', (snapshot) => {
-            isConnectedToCloud = true;
-            clearTimeout(connectionTimeout);
-            const data = snapshot.val();
-            if (data) {
-                state = { ...state, ...data.state };
-                nextId = data.nextId || 1;
-                localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...state, nextId }));
-            }
-            renderSemua();
-            updateStatus('cloud');
-        }, (error) => {
-            clearTimeout(connectionTimeout);
-            muatLokal();
-        });
-    } else {
-        muatLokal();
-    }
-} catch (e) {
-    clearTimeout(connectionTimeout);
-    muatLokal();
-}
+// 1. MUAT LOKAL LEBIH DAHULU (OFFLINE-FIRST)
+muatLokal();
 
 function muatLokal() {
     const localData = localStorage.getItem(STORAGE_KEY);
     if (localData) {
         try {
             const parsed = JSON.parse(localData);
-            state = { ...state, ...parsed };
-            nextId = parsed.nextId || (state.riwayat ? state.riwayat.length + 1 : 1);
+            if (parsed.state) state = { ...state, ...parsed.state };
+            if (parsed.meta) meta = { ...meta, ...parsed.meta };
         } catch(err) {}
     }
-    renderSemua();
-    updateStatus('lokal');
 }
 
-// FORMAT BADGE TEKS STATUS ONLINE / OFFLINE BARU
+function simpanLokal() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ state, meta }));
+}
+
+function simpanData() {
+    meta.needsSync = true;
+    meta.lastModified = Date.now();
+    simpanLokal();
+    renderSemua();
+    
+    if (isConnectedToCloud) {
+        syncLocalToCloud();
+    } else {
+        updateStatus('offline');
+    }
+}
+
+function syncLocalToCloud() {
+    if (!dbRef || !isConnectedToCloud) return;
+    updateStatus('saving');
+    
+    dbRef.set({
+        state: state,
+        nextId: meta.nextId,
+        lastModified: meta.lastModified
+    }).then(() => {
+        meta.needsSync = false;
+        simpanLokal();
+        updateStatus('cloud');
+    }).catch((err) => {
+        updateStatus('offline');
+    });
+}
+
+// 2. FIREBASE REALTIME LISTENER + CONNECTOR
+try {
+    if (typeof firebase !== 'undefined') {
+        firebase.initializeApp(firebaseConfig);
+        db = firebase.database();
+        dbRef = db.ref('keuangan_garasi_fotocopy');
+        
+        // DETEKSI STATUS KONEKSI FIREBASE
+        const connectedRef = db.ref(".info/connected");
+        connectedRef.on("value", (snap) => {
+            if (snap.val() === true) {
+                isConnectedToCloud = true;
+                // JIKA ADA EDITAN SAAT OFFLINE, PUSH OTOMATIS LEBIH DULU
+                if (meta.needsSync) {
+                    syncLocalToCloud();
+                } else {
+                    updateStatus('cloud');
+                }
+            } else {
+                isConnectedToCloud = false;
+                updateStatus('offline');
+            }
+        });
+
+        // DETEKSI PEMBARUAN DARI CLOUD (HANYA TIMPA JIKA LOKAL TIDAK PUNYA UNPUSHED EDITS)
+        dbRef.on('value', (snapshot) => {
+            const data = snapshot.val();
+            if (data && data.state) {
+                if (!meta.needsSync) {
+                    state = { ...state, ...data.state };
+                    meta.nextId = data.nextId || meta.nextId;
+                    meta.lastModified = data.lastModified || Date.now();
+                    simpanLokal();
+                    renderSemua();
+                }
+            }
+        });
+    } else {
+        updateStatus('offline');
+    }
+} catch (e) {
+    updateStatus('offline');
+}
+
+// BROWSER ONLINE / OFFLINE LISTENERS
+window.addEventListener('online', () => {
+    if (meta.needsSync && isConnectedToCloud) {
+        syncLocalToCloud();
+    }
+});
+
+window.addEventListener('offline', () => {
+    isConnectedToCloud = false;
+    updateStatus('offline');
+});
+
 function updateStatus(tipe) {
     const statusEl = document.getElementById('syncStatus');
     if (!statusEl) return;
@@ -71,23 +137,11 @@ function updateStatus(tipe) {
         statusEl.innerHTML = '<i class="fa-solid fa-circle text-[7px] animate-pulse"></i> Online';
         statusEl.className = 'text-[9px] px-2 py-0.5 rounded-full bg-emerald-500 text-white flex items-center gap-1 shadow-sm font-semibold';
     } else if (tipe === 'saving') {
-        statusEl.innerHTML = '<i class="fa-solid fa-rotate fa-spin"></i> Menyimpan...';
+        statusEl.innerHTML = '<i class="fa-solid fa-rotate fa-spin"></i> Menyinkronkan...';
         statusEl.className = 'text-[9px] px-2 py-0.5 rounded-full bg-amber-500 text-white flex items-center gap-1 shadow-sm font-semibold';
     } else {
         statusEl.innerHTML = '<i class="fa-solid fa-circle text-[7px]"></i> Offline';
         statusEl.className = 'text-[9px] px-2 py-0.5 rounded-full bg-slate-500 text-white flex items-center gap-1 shadow-sm font-semibold';
-    }
-}
-
-function simpanData() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...state, nextId }));
-    if (dbRef && isConnectedToCloud) {
-        updateStatus('saving');
-        dbRef.set({ state, nextId })
-            .then(() => updateStatus('cloud'))
-            .catch(() => updateStatus('lokal'));
-    } else {
-        updateStatus('lokal');
     }
 }
 
@@ -201,9 +255,9 @@ function handleKasLaciAwal(e) {
     state.kasLaciAwal += nominal;
     const w = getWaktuLengkap();
     if (!state.riwayat) state.riwayat = [];
-    state.riwayat.push({ id: nextId++, waktu: w.jam, timestamp: w.timestamp, kategori: 'Kas Laci', ket: 'Ambil Kas Laci Awal', tipe: 'KELUAR', nominal, sumber: 'KAS_LACI' });
+    state.riwayat.push({ id: meta.nextId++, waktu: w.jam, timestamp: w.timestamp, kategori: 'Kas Laci', ket: 'Ambil Kas Laci Awal', tipe: 'KELUAR', nominal, sumber: 'KAS_LACI' });
     document.getElementById('inputKasLaci').value = '';
-    simpanData(); renderSemua(); tutupModal('modalKasLaci');
+    simpanData(); tutupModal('modalKasLaci');
 }
 
 function handleTransaksiTunai(e) {
@@ -237,10 +291,10 @@ function handleTransaksiTunai(e) {
 
     const w = getWaktuLengkap();
     if (!state.riwayat) state.riwayat = [];
-    state.riwayat.push({ id: nextId++, waktu: w.jam, timestamp: w.timestamp, kategori, ket, tipe: jenis, nominal, sumber: idSumber });
+    state.riwayat.push({ id: meta.nextId++, waktu: w.jam, timestamp: w.timestamp, kategori, ket, tipe: jenis, nominal, sumber: idSumber });
     document.getElementById('inputKetTunai').value = '';
     document.getElementById('inputNominalTunai').value = '';
-    simpanData(); renderSemua(); tutupModal('modalTransaksiTunai');
+    simpanData(); tutupModal('modalTransaksiTunai');
 }
 
 function handleTransaksiDigital(e) {
@@ -258,10 +312,10 @@ function handleTransaksiDigital(e) {
 
     const w = getWaktuLengkap();
     if (!state.riwayat) state.riwayat = [];
-    state.riwayat.push({ id: nextId++, waktu: w.jam, timestamp: w.timestamp, kategori: 'Toko', ket: `${ket} (${metode})`, tipe: 'MASUK', nominal, sumber: metode });
+    state.riwayat.push({ id: meta.nextId++, waktu: w.jam, timestamp: w.timestamp, kategori: 'Toko', ket: `${ket} (${metode})`, tipe: 'MASUK', nominal, sumber: metode });
     document.getElementById('inputKetDigital').value = '';
     document.getElementById('inputNominalDigital').value = '';
-    simpanData(); renderSemua(); tutupModal('modalTransaksiDigital');
+    simpanData(); tutupModal('modalTransaksiDigital');
 }
 
 function handleSaldoManual(e) {
@@ -282,10 +336,10 @@ function handleSaldoManual(e) {
 
     const w = getWaktuLengkap();
     if (!state.riwayat) state.riwayat = [];
-    state.riwayat.push({ id: nextId++, waktu: w.jam, timestamp: w.timestamp, kategori: 'Manual', ket: `[${akun === 'TUNAI' ? 'Tunai' : 'Bank'}] ${ket}`, tipe: aksi === 'TAMBAH' ? 'MASUK' : 'KELUAR', nominal, sumber: 'MANUAL_' + akun });
+    state.riwayat.push({ id: meta.nextId++, waktu: w.jam, timestamp: w.timestamp, kategori: 'Manual', ket: `[${akun === 'TUNAI' ? 'Tunai' : 'Bank'}] ${ket}`, tipe: aksi === 'TAMBAH' ? 'MASUK' : 'KELUAR', nominal, sumber: 'MANUAL_' + akun });
     document.getElementById('inputKetManual').value = '';
     document.getElementById('inputNominalManual').value = '';
-    simpanData(); renderSemua(); tutupModal('modalSaldoManual');
+    simpanData(); tutupModal('modalSaldoManual');
 }
 
 function eksekusiSetorkan() {
@@ -299,7 +353,7 @@ function eksekusiSetorkan() {
     const w = getWaktuLengkap();
     if (!state.riwayat) state.riwayat = [];
     state.riwayat.push({ 
-        id: nextId++, 
+        id: meta.nextId++, 
         waktu: w.jam, 
         timestamp: w.timestamp, 
         kategori: 'Setoran', 
@@ -317,7 +371,6 @@ function eksekusiSetorkan() {
     state.transferHariIni = 0;
 
     simpanData(); 
-    renderSemua(); 
     tutupModal('modalSetorkan');
     alert('✅ Penutupan kasir berhasil!');
 }
@@ -344,7 +397,7 @@ function handleEditRiwayat(e) {
     item.ket = newKet;
     terapkanEfekSaldo(item, item.nominal);
 
-    simpanData(); renderSemua(); tutupModal('modalEdit');
+    simpanData(); tutupModal('modalEdit');
 }
 
 function hapusRiwayat(id) {
@@ -353,7 +406,7 @@ function hapusRiwayat(id) {
     if (idx === -1) return;
     terapkanEfekSaldo(state.riwayat[idx], -state.riwayat[idx].nominal);
     state.riwayat.splice(idx, 1);
-    simpanData(); renderSemua();
+    simpanData();
 }
 
 function terapkanEfekSaldo(item, nominal) {
@@ -420,7 +473,7 @@ function toggleKategoriTunai() {
 }
 
 function backupData() {
-    const dataStr = JSON.stringify({ ...state, nextId }, null, 2);
+    const dataStr = JSON.stringify({ state, meta }, null, 2);
     const blob = new Blob([dataStr], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -435,8 +488,9 @@ function restoreData(event) {
     reader.onload = (e) => {
         try {
             const parsed = JSON.parse(e.target.result);
-            state = { ...state, ...parsed }; nextId = parsed.nextId || (state.riwayat.length + 1);
-            simpanData(); renderSemua(); tutupModal('modalSetelan'); alert('✅ Data berhasil dipulihkan!');
+            if (parsed.state) state = { ...state, ...parsed.state };
+            if (parsed.meta) meta = { ...meta, ...parsed.meta };
+            simpanData(); tutupModal('modalSetelan'); alert('✅ Data berhasil dipulihkan!');
         } catch (err) { alert('❌ File tidak valid!'); }
     };
     reader.readAsText(file);
@@ -447,7 +501,8 @@ function resetAplikasi() {
     if (!confirm('Konfirmasi sekali lagi: HAPUS SEMUA DATA?')) return;
     localStorage.removeItem(STORAGE_KEY);
     state = { saldoTunai: 0, saldoBank: 0, kasLaciAwal: 0, bersihHariIni: 0, qrisHariIni: 0, transferHariIni: 0, kategoriPengeluaran: ['Paket COD', 'Paket TF', 'Belanja Felik', 'Belanja Yuni', 'Belanja Gibran', 'Belanja Toko', 'Operasional', 'Lain-lain'], riwayat: [] };
-    nextId = 1; simpanData(); location.reload();
+    meta = { nextId: 1, needsSync: true, lastModified: Date.now() };
+    simpanData(); location.reload();
 }
 
 window.onload = function() {
