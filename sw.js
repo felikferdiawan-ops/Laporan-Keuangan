@@ -1,5 +1,5 @@
-const CACHE_NAME = 'garasi-keuangan-v100';
-const ASSETS = ['./', './index.html', './style.css?v=100', './app.js?v=100', './manifest.json', './logo.png', './icon-192.png', './icon-512.png'];
+const CACHE_NAME = 'garasi-keuangan-v101';
+const ASSETS = ['./', './index.html', './style.css?v=101', './app.js?v=101', './manifest.json', './logo.png', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', (e) => { 
     self.skipWaiting();

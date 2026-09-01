@@ -19,14 +19,14 @@ let state = {
     riwayat: []
 };
 
-// META UNTUK TRACKING OFFLINE EDITS / AUTO-SYNC
+// META TRACKING UNTUK AUTO-SYNC OFFLINE TO CLOUD
 let meta = {
     nextId: 1,
-    needsSync: false,
-    lastModified: Date.now()
+    isDirty: false,
+    lastUpdated: Date.now()
 };
 
-// 1. MUAT LOKAL LEBIH DAHULU (OFFLINE-FIRST)
+// 1. INSIALISASI LOKAL LEBIH DULU
 muatLokal();
 
 function muatLokal() {
@@ -45,50 +45,51 @@ function simpanLokal() {
 }
 
 function simpanData() {
-    meta.needsSync = true;
-    meta.lastModified = Date.now();
+    meta.isDirty = true;
+    meta.lastUpdated = Date.now();
     simpanLokal();
     renderSemua();
     
     if (isConnectedToCloud) {
-        syncLocalToCloud();
+        syncUpData();
     } else {
         updateStatus('offline');
     }
 }
 
-function syncLocalToCloud() {
+// FUNGSI UNGGAN AUTO-SYNC KE FIREBASE
+function syncUpData() {
     if (!dbRef || !isConnectedToCloud) return;
     updateStatus('saving');
     
     dbRef.set({
         state: state,
         nextId: meta.nextId,
-        lastModified: meta.lastModified
+        lastUpdated: meta.lastUpdated
     }).then(() => {
-        meta.needsSync = false;
+        meta.isDirty = false;
         simpanLokal();
         updateStatus('cloud');
-    }).catch((err) => {
+    }).catch(() => {
         updateStatus('offline');
     });
 }
 
-// 2. FIREBASE REALTIME LISTENER + CONNECTOR
+// 2. FIREBASE REALTIME CONNECTOR
 try {
     if (typeof firebase !== 'undefined') {
         firebase.initializeApp(firebaseConfig);
         db = firebase.database();
         dbRef = db.ref('keuangan_garasi_fotocopy');
         
-        // DETEKSI STATUS KONEKSI FIREBASE
+        // LISTENER KONEKSI REALTIME
         const connectedRef = db.ref(".info/connected");
         connectedRef.on("value", (snap) => {
             if (snap.val() === true) {
                 isConnectedToCloud = true;
-                // JIKA ADA EDITAN SAAT OFFLINE, PUSH OTOMATIS LEBIH DULU
-                if (meta.needsSync) {
-                    syncLocalToCloud();
+                // BILA ADA DATA HASIL EDIT OFFLINE, AUTO UPLOAD SEGERA!
+                if (meta.isDirty) {
+                    syncUpData();
                 } else {
                     updateStatus('cloud');
                 }
@@ -98,14 +99,14 @@ try {
             }
         });
 
-        // DETEKSI PEMBARUAN DARI CLOUD (HANYA TIMPA JIKA LOKAL TIDAK PUNYA UNPUSHED EDITS)
+        // LISTENER DATA MASUK DARI CLOUD (TIDAK DITIMPA JIKA ADA PENDING OFFLINE EDITS)
         dbRef.on('value', (snapshot) => {
             const data = snapshot.val();
             if (data && data.state) {
-                if (!meta.needsSync) {
+                if (!meta.isDirty) {
                     state = { ...state, ...data.state };
                     meta.nextId = data.nextId || meta.nextId;
-                    meta.lastModified = data.lastModified || Date.now();
+                    meta.lastUpdated = data.lastUpdated || Date.now();
                     simpanLokal();
                     renderSemua();
                 }
@@ -118,10 +119,10 @@ try {
     updateStatus('offline');
 }
 
-// BROWSER ONLINE / OFFLINE LISTENERS
+// BROWSER NETWORK LISTENERS
 window.addEventListener('online', () => {
-    if (meta.needsSync && isConnectedToCloud) {
-        syncLocalToCloud();
+    if (meta.isDirty && isConnectedToCloud) {
+        syncUpData();
     }
 });
 
@@ -501,7 +502,7 @@ function resetAplikasi() {
     if (!confirm('Konfirmasi sekali lagi: HAPUS SEMUA DATA?')) return;
     localStorage.removeItem(STORAGE_KEY);
     state = { saldoTunai: 0, saldoBank: 0, kasLaciAwal: 0, bersihHariIni: 0, qrisHariIni: 0, transferHariIni: 0, kategoriPengeluaran: ['Paket COD', 'Paket TF', 'Belanja Felik', 'Belanja Yuni', 'Belanja Gibran', 'Belanja Toko', 'Operasional', 'Lain-lain'], riwayat: [] };
-    meta = { nextId: 1, needsSync: true, lastModified: Date.now() };
+    meta = { nextId: 1, isDirty: true, lastUpdated: Date.now() };
     simpanData(); location.reload();
 }
 
