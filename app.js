@@ -63,18 +63,19 @@ function muatLokal() {
     updateStatus('lokal');
 }
 
+// FORMAT BADGE TEKS STATUS ONLINE / OFFLINE BARU
 function updateStatus(tipe) {
     const statusEl = document.getElementById('syncStatus');
     if (!statusEl) return;
     if (tipe === 'cloud') {
-        statusEl.innerHTML = '<i class="fa-solid fa-cloud-check"></i> Firebase Connected';
-        statusEl.className = 'text-[9px] px-2 py-0.5 rounded-full bg-emerald-500 text-white flex items-center gap-1 shadow-sm';
+        statusEl.innerHTML = '<i class="fa-solid fa-circle text-[7px] animate-pulse"></i> Online';
+        statusEl.className = 'text-[9px] px-2 py-0.5 rounded-full bg-emerald-500 text-white flex items-center gap-1 shadow-sm font-semibold';
     } else if (tipe === 'saving') {
         statusEl.innerHTML = '<i class="fa-solid fa-rotate fa-spin"></i> Menyimpan...';
-        statusEl.className = 'text-[9px] px-2 py-0.5 rounded-full bg-amber-500 text-white flex items-center gap-1 shadow-sm';
+        statusEl.className = 'text-[9px] px-2 py-0.5 rounded-full bg-amber-500 text-white flex items-center gap-1 shadow-sm font-semibold';
     } else {
-        statusEl.innerHTML = '<i class="fa-solid fa-wifi"></i> Offline (Lokal)';
-        statusEl.className = 'text-[9px] px-2 py-0.5 rounded-full bg-slate-500 text-white flex items-center gap-1 shadow-sm';
+        statusEl.innerHTML = '<i class="fa-solid fa-circle text-[7px]"></i> Offline';
+        statusEl.className = 'text-[9px] px-2 py-0.5 rounded-full bg-slate-500 text-white flex items-center gap-1 shadow-sm font-semibold';
     }
 }
 
@@ -107,7 +108,6 @@ function updateTanggal() {
 }
 
 function renderSemua() {
-    // Total Saldo Utama menghitung seluruh aset aktif (termasuk pending QRIS & Transfer hari ini)
     const saldoUtama = (state.saldoTunai || 0) + (state.saldoBank || 0) + (state.kasLaciAwal || 0) + (state.bersihHariIni || 0) + (state.qrisHariIni || 0) + (state.transferHariIni || 0);
     
     setElText('valSaldoUtama', formatRp(saldoUtama));
@@ -118,7 +118,6 @@ function renderSemua() {
     setElText('valQrisHariIni', formatRp(state.qrisHariIni));
     setElText('valTransferHariIni', formatRp(state.transferHariIni));
 
-    // Rincian Modal Setorkan
     const subtotalTunai = (state.kasLaciAwal || 0) + (state.bersihHariIni || 0);
     const subtotalBank = (state.qrisHariIni || 0) + (state.transferHariIni || 0);
     
@@ -244,7 +243,6 @@ function handleTransaksiTunai(e) {
     simpanData(); renderSemua(); tutupModal('modalTransaksiTunai');
 }
 
-// ALUR BARU: QRIS / TRANSFER TIDAK LANGSUNG MASUK SALDO BANK
 function handleTransaksiDigital(e) {
     e.preventDefault();
     const metode = document.getElementById('inputMetodeDigital').value;
@@ -252,7 +250,6 @@ function handleTransaksiDigital(e) {
     const nominal = parseInt(document.getElementById('inputNominalDigital').value, 10);
     if (!ket) ket = 'Penjualan Toko';
     
-    // Hanya menambah indikator harian (TIDAK langsung masuk saldoBank)
     if (metode === 'QRIS') {
         state.qrisHariIni += nominal;
     } else {
@@ -291,15 +288,11 @@ function handleSaldoManual(e) {
     simpanData(); renderSemua(); tutupModal('modalSaldoManual');
 }
 
-// ALUR BARU: SAAT SETOR, QRIS & TF BARU MASUK KE SALDO REKENING BANK
 function eksekusiSetorkan() {
     const totalTunaiSetor = (state.kasLaciAwal || 0) + (state.bersihHariIni || 0);
     const totalBankSetor = (state.qrisHariIni || 0) + (state.transferHariIni || 0);
 
-    // Saldo Tunai bertambah dari uang fisik laci
     state.saldoTunai += totalTunaiSetor;
-    
-    // Saldo Bank bertambah dari QRIS + Transfer hari ini
     state.saldoBank += totalBankSetor;
 
     const totalSetoran = totalTunaiSetor + totalBankSetor;
@@ -318,7 +311,6 @@ function eksekusiSetorkan() {
         sumber: 'SETOR' 
     });
 
-    // Reset seluruh indikator harian ke Rp 0
     state.kasLaciAwal = 0;
     state.bersihHariIni = 0;
     state.qrisHariIni = 0;
@@ -327,7 +319,7 @@ function eksekusiSetorkan() {
     simpanData(); 
     renderSemua(); 
     tutupModal('modalSetorkan');
-    alert('✅ Penutupan kasir berhasil! Tunai telah masuk ke Saldo Tunai dan Digital telah masuk ke Rekening Bank.');
+    alert('✅ Penutupan kasir berhasil!');
 }
 
 function bukaEditRiwayat(id) {
