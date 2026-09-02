@@ -9,19 +9,17 @@ const firebaseConfig = {
     databaseURL: "https://garasi-keuangan-default-rtdb.asia-southeast1.firebasedatabase.app"
 };
 
-const STORAGE_KEY = 'GARASI_FOTOCOPY_DATA_V400';
+const STORAGE_KEY = 'GARASI_FOTOCOPY_DATA_V501';
 let db = null, dbRef = null, isConnectedToCloud = false, chartInstance = null;
 
 let state = {
     saldoTunai: 0, saldoBank: 0, kasLaciAwal: 0, bersihHariIni: 0, qrisHariIni: 0, transferHariIni: 0,
     kategoriPengeluaran: ['Paket COD', 'Paket TF', 'Belanja Felik', 'Belanja Yuni', 'Belanja Gibran', 'Belanja Toko', 'Operasional', 'Lain-lain'],
-    riwayat: [],
-    targets: [] // Array untuk Target Impian Baru
+    riwayat: [], targets: [], bons: []
 };
 
 let meta = { nextId: 1, isDirty: false, lastUpdated: Date.now() };
 
-// MUAT DATA LOKAL DULU
 muatLokal();
 
 function muatLokal() {
@@ -32,7 +30,8 @@ function muatLokal() {
             if (parsed.state) state = Object.assign(state, parsed.state);
             if (parsed.meta) meta = Object.assign(meta, parsed.meta);
             if (!Array.isArray(state.riwayat)) state.riwayat = [];
-            if (!Array.isArray(state.targets)) state.targets = []; // Handle old data without targets array
+            if (!Array.isArray(state.targets)) state.targets = [];
+            if (!Array.isArray(state.bons)) state.bons = [];
         } catch(err) {}
     }
 }
@@ -44,7 +43,6 @@ function commitLocalChange() {
     meta.lastUpdated = Date.now();
     simpanLokal();
     renderSemua();
-    
     if (isConnectedToCloud) syncUpData();
     else updateStatus('offline');
 }
@@ -52,7 +50,6 @@ function commitLocalChange() {
 function syncUpData() {
     if (!dbRef || !isConnectedToCloud) return;
     updateStatus('saving');
-    
     dbRef.set({ state: state, nextId: meta.nextId, lastUpdated: meta.lastUpdated }).then(() => {
         meta.isDirty = false; simpanLokal(); updateStatus('cloud');
     }).catch(() => { updateStatus('offline'); });
@@ -63,16 +60,12 @@ try {
         firebase.initializeApp(firebaseConfig);
         db = firebase.database();
         dbRef = db.ref('keuangan_garasi_fotocopy');
-        
         db.ref(".info/connected").on("value", (snap) => {
             if (snap.val() === true) {
                 isConnectedToCloud = true;
                 if (meta.isDirty) syncUpData(); else updateStatus('cloud');
-            } else {
-                isConnectedToCloud = false; updateStatus('offline');
-            }
+            } else { isConnectedToCloud = false; updateStatus('offline'); }
         });
-
         dbRef.on('value', (snapshot) => {
             const data = snapshot.val();
             if (data && data.state) {
@@ -80,11 +73,12 @@ try {
                     state = Object.assign(state, data.state);
                     if (!Array.isArray(state.riwayat)) state.riwayat = [];
                     if (!Array.isArray(state.targets)) state.targets = [];
+                    if (!Array.isArray(state.bons)) state.bons = [];
                     meta.nextId = data.nextId || meta.nextId;
                     meta.lastUpdated = data.lastUpdated || Date.now();
                     simpanLokal(); renderSemua();
-                    // Jika modal target sedang buka, rerender
                     if(!document.getElementById('modalTargetLuar').classList.contains('hidden')) renderDaftarTarget();
+                    if(!document.getElementById('modalBonLuar').classList.contains('hidden')) renderDaftarBon();
                 }
             }
         });
@@ -145,7 +139,6 @@ function renderSemua() {
     setElText('setorBankTotal', formatRp(subtotalBank));
     setElText('setorTotal', formatRp(subtotalTunai + subtotalBank));
     setElText('totalTransaksi', `${state.riwayat ? state.riwayat.length : 0} transaksi`);
-    
     renderRiwayat();
     renderKategoriDropdown();
 }
@@ -166,7 +159,6 @@ function renderRiwayat() {
         let badge = item.tipe === 'MASUK' ? `<span class="text-emerald-600 font-bold">+${formatRp(item.nominal)}</span>` : 
                     item.tipe === 'KELUAR' ? `<span class="text-rose-600 font-bold">-${formatRp(item.nominal)}</span>` : 
                     `<span class="text-slate-700 font-bold">${formatRp(item.nominal)}</span>`;
-        
         tr.innerHTML = `<td class="py-3 px-4 font-mono text-slate-500 text-[11px]">${item.waktu}</td>
                         <td class="py-3 px-4"><span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-200 text-slate-700 border border-slate-300">${item.kategori}</span></td>
                         <td class="py-3 px-4 font-medium text-slate-800">${item.ket || ''}</td>
@@ -187,7 +179,6 @@ function tutupModal(id) {
     const m = document.getElementById(id); if (!m) return; m.classList.add('hidden'); m.classList.remove('flex');
 }
 
-// ---------------- TRANSAKSI HANDLERS ---------------- //
 window.handleKasLaciAwal = function(e) {
     e.preventDefault(); const nominal = parseInt(document.getElementById('inputKasLaci').value, 10);
     if (nominal > state.saldoTunai) { alert('Saldo Tunai tidak cukup!'); return false; }
@@ -202,7 +193,6 @@ window.handleTransaksiTunai = function(e) {
     const jenis = document.getElementById('inputJenisTunai').value; let ket = document.getElementById('inputKetTunai').value.trim();
     const nominal = parseInt(document.getElementById('inputNominalTunai').value, 10);
     let kategori = 'Toko', idSumber = '';
-
     if (jenis === 'MASUK') {
         if (!ket) ket = 'Penjualan Toko'; state.bersihHariIni += nominal; idSumber = 'TUNAI_MASUK';
     } else {
@@ -253,7 +243,6 @@ window.eksekusiSetorkan = function() {
     commitLocalChange(); tutupModal('modalSetorkan'); alert('✅ Penutupan kasir berhasil!');
 };
 
-// ---------------- EDIT & HAPUS ---------------- //
 window.bukaEditRiwayat = function(id) {
     const item = state.riwayat.find(r => r.id === id); if (!item) return;
     document.getElementById('editId').value = id; document.getElementById('editKet').value = item.ket; document.getElementById('editNominal').value = item.nominal; bukaModal('modalEdit');
@@ -265,10 +254,12 @@ window.handleEditRiwayat = function(e) {
     commitLocalChange(); tutupModal('modalEdit'); return false;
 };
 window.hapusRiwayat = function(id) {
-    if (!confirm('Hapus transaksi ini? Saldo terkait akan menyesuaikan.')) return;
+    if (!confirm('Hapus transaksi ini? Saldo terkait akan menyesuaikan otomatis.')) return;
     const idx = state.riwayat.findIndex(r => r.id === id); if (idx === -1) return;
     terapkanEfekSaldo(state.riwayat[idx], -state.riwayat[idx].nominal); state.riwayat.splice(idx, 1); commitLocalChange();
 };
+
+// ============ LOGIKA ROLLBACK SALDO DIPERBARUI (V501) ============
 function terapkanEfekSaldo(item, nominal) {
     switch(item.sumber) {
         case 'KAS_LACI': state.saldoTunai -= nominal; state.kasLaciAwal += nominal; break;
@@ -279,67 +270,50 @@ function terapkanEfekSaldo(item, nominal) {
         case 'TRANSFER': state.transferHariIni += nominal; break;
         case 'MANUAL_TUNAI': state.saldoTunai += (item.tipe === 'MASUK' ? nominal : -nominal); break;
         case 'MANUAL_BANK': state.saldoBank += (item.tipe === 'MASUK' ? nominal : -nominal); break;
-        case 'TARGET_TUNAI': state.saldoTunai -= nominal; break; // Refund jika dihapus
+        case 'TARGET_TUNAI': state.saldoTunai -= nominal; break; 
         case 'TARGET_BANK': state.saldoBank -= nominal; break;
+        // PELUNASAN BON: apply add saldo, rollback minus saldo
+        case 'PELUNASAN_BON_TUNAI': state.saldoTunai += nominal; break;
+        case 'PELUNASAN_BON_BANK': state.saldoBank += nominal; break;
+        case 'REFUND_TARGET': state.saldoTunai += nominal; break;
         case 'SETOR':
-            if (item.nominalTunai !== undefined && item.nominalBank !== undefined) { const ratio = item.nominal > 0 ? (nominal / item.nominal) : 1; state.saldoTunai += item.nominalTunai * ratio; state.saldoBank += item.nominalBank * ratio; } 
-            else { state.saldoTunai += nominal; }
+            if (item.nominalTunai !== undefined && item.nominalBank !== undefined) { 
+                const ratio = item.nominal > 0 ? (nominal / item.nominal) : 1; 
+                state.saldoTunai += item.nominalTunai * ratio; 
+                state.saldoBank += item.nominalBank * ratio; 
+            } else { state.saldoTunai += nominal; }
             break;
     }
 }
 
-// ---------------- TARGET IMPIAN (BARU) ---------------- //
 window.renderDaftarTarget = function() {
     const container = document.getElementById('listTargetContainer');
     if (!state.targets || state.targets.length === 0) {
-        container.innerHTML = '<div class="text-center py-10 text-slate-400 text-sm"><i class="fa-solid fa-bullseye text-4xl mb-3 text-slate-300"></i><p>Belum ada target dibuat.</p></div>';
-        return;
+        container.innerHTML = '<div class="text-center py-10 text-slate-400 text-sm"><i class="fa-solid fa-bullseye text-4xl mb-3 text-slate-300"></i><p>Belum ada target dibuat.</p></div>'; return;
     }
-    let html = '';
-    const now = new Date();
-    
+    let html = ''; const now = new Date();
     state.targets.forEach(t => {
-        // Hitung deadline & sisa waktu
-        const created = new Date(t.tanggalDibuat);
-        let deadline = new Date(created);
+        const created = new Date(t.tanggalDibuat); let deadline = new Date(created);
         if(t.durasiSatuan === 'HARI') deadline.setDate(deadline.getDate() + t.durasiAngka);
         else deadline.setMonth(deadline.getMonth() + t.durasiAngka);
-
-        const diffTime = Math.max(0, deadline - now);
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-        let strWaktu = diffDays > 0 ? `${diffDays} Hari` : 'Jatuh Tempo/Selesai';
-        
-        // Hitung persentase & saran sisihkan harian
+        const diffTime = Math.max(0, deadline - now); const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        let strWaktu = diffDays > 0 ? `${diffDays} Hari` : 'Selesai';
         let percent = Math.min(100, (t.terkumpul / t.targetNominal) * 100);
         let sisaNominal = Math.max(0, t.targetNominal - t.terkumpul);
         let saranSisih = diffDays > 0 ? (sisaNominal / diffDays) : sisaNominal;
-
         html += `
         <div class="bg-white border border-slate-200 rounded-xl p-4 shadow-sm mb-3 relative overflow-hidden">
             ${percent === 100 ? '<div class="absolute top-0 right-0 bg-emerald-500 text-white text-[9px] font-bold px-3 py-1 rounded-bl-lg">TERCAPAI</div>' : ''}
             <div class="flex justify-between items-start mb-2">
-                <div class="pr-6">
-                    <span class="text-[9px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded uppercase font-bold">${t.jenis}</span>
-                    <h4 class="font-bold text-sm mt-1.5 text-slate-800 leading-tight">${t.nama}</h4>
-                </div>
+                <div class="pr-6"><span class="text-[9px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded uppercase font-bold">${t.jenis}</span><h4 class="font-bold text-sm mt-1.5 text-slate-800 leading-tight">${t.nama}</h4></div>
                 <button onclick="hapusTarget(${t.id})" class="text-rose-500 text-xs hover:bg-rose-50 p-1.5 rounded transition"><i class="fa-solid fa-trash"></i></button>
             </div>
-            
-            <div class="text-[11px] mb-2 font-medium">
-                <span class="text-slate-500">Terkumpul: </span>
-                <strong class="text-emerald-600 text-sm">${formatRp(t.terkumpul)}</strong>
-                <span class="text-slate-400"> dari ${formatRp(t.targetNominal)}</span>
-            </div>
-            
-            <div class="w-full bg-slate-100 rounded-full h-2 mb-3 border border-slate-200">
-                <div class="bg-gradient-to-r from-emerald-400 to-emerald-500 h-2 rounded-full" style="width: ${percent}%"></div>
-            </div>
-            
+            <div class="text-[11px] mb-2 font-medium"><span class="text-slate-500">Terkumpul: </span><strong class="text-emerald-600 text-sm">${formatRp(t.terkumpul)}</strong><span class="text-slate-400"> dari ${formatRp(t.targetNominal)}</span></div>
+            <div class="w-full bg-slate-100 rounded-full h-2 mb-3 border border-slate-200"><div class="bg-gradient-to-r from-emerald-400 to-emerald-500 h-2 rounded-full" style="width: ${percent}%"></div></div>
             <div class="grid grid-cols-2 gap-2 text-[10px] bg-slate-50 p-2.5 rounded-lg border border-slate-100 mb-3">
                 <div><span class="text-slate-400 block mb-0.5">Sisa Waktu:</span><strong class="text-slate-700">${strWaktu}</strong></div>
                 <div><span class="text-slate-400 block mb-0.5">Sisihkan:</span><strong class="text-amber-600">${formatRp(saranSisih)} /hari</strong></div>
             </div>
-            
             ${percent < 100 ? `<button onclick="bukaModalIsiTarget(${t.id}, '${t.nama}')" class="w-full py-2 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 transition"><i class="fa-solid fa-coins mr-1"></i> Isi Saldo Target</button>` : `<button disabled class="w-full py-2 bg-emerald-100 text-emerald-700 rounded-lg text-xs font-bold"><i class="fa-solid fa-check-circle mr-1"></i> Target Selesai!</button>`}
         </div>`;
     });
@@ -348,117 +322,121 @@ window.renderDaftarTarget = function() {
 
 window.handleTambahTarget = function(e) {
     e.preventDefault();
-    const nama = document.getElementById('tTargetNama').value.trim();
-    const jenis = document.getElementById('tTargetJenis').value.trim();
-    const nominal = parseInt(document.getElementById('tTargetNominal').value, 10);
-    const durasiAngka = parseInt(document.getElementById('tTargetDurasiAngka').value, 10);
-    const durasiSatuan = document.getElementById('tTargetDurasiSatuan').value;
-    
     if(!state.targets) state.targets = [];
     state.targets.push({
-        id: meta.nextId++,
-        nama: nama,
-        jenis: jenis,
-        targetNominal: nominal,
-        terkumpul: 0,
-        durasiAngka: durasiAngka,
-        durasiSatuan: durasiSatuan,
-        tanggalDibuat: Date.now()
+        id: meta.nextId++, nama: document.getElementById('tTargetNama').value.trim(), jenis: document.getElementById('tTargetJenis').value.trim(),
+        targetNominal: parseInt(document.getElementById('tTargetNominal').value, 10), terkumpul: 0,
+        durasiAngka: parseInt(document.getElementById('tTargetDurasiAngka').value, 10), durasiSatuan: document.getElementById('tTargetDurasiSatuan').value, tanggalDibuat: Date.now()
     });
-    
-    document.getElementById('tTargetNama').value = '';
-    document.getElementById('tTargetJenis').value = '';
-    document.getElementById('tTargetNominal').value = '';
-    document.getElementById('tTargetDurasiAngka').value = '';
-    
-    commitLocalChange();
-    tutupModal('modalTambahTarget');
-    renderDaftarTarget();
+    document.getElementById('tTargetNama').value = ''; document.getElementById('tTargetJenis').value = ''; document.getElementById('tTargetNominal').value = ''; document.getElementById('tTargetDurasiAngka').value = '';
+    commitLocalChange(); tutupModal('modalTambahTarget'); renderDaftarTarget();
 };
 
-window.bukaModalIsiTarget = function(id, nama) {
-    document.getElementById('iTargetId').value = id;
-    document.getElementById('infoIsiTargetNama').innerText = "Target: " + nama;
-    bukaModal('modalIsiTarget');
-};
+window.bukaModalIsiTarget = function(id, nama) { document.getElementById('iTargetId').value = id; document.getElementById('infoIsiTargetNama').innerText = "Target: " + nama; bukaModal('modalIsiTarget'); };
 
 window.handleIsiTarget = function(e) {
-    e.preventDefault();
-    const id = parseInt(document.getElementById('iTargetId').value, 10);
-    const sumber = document.getElementById('iTargetSumber').value;
-    const nominal = parseInt(document.getElementById('iTargetNominal').value, 10);
-    
-    const targetIdx = state.targets.findIndex(t => t.id === id);
-    if(targetIdx === -1) return false;
-    
-    // Validasi Saldo
+    e.preventDefault(); const id = parseInt(document.getElementById('iTargetId').value, 10); const sumber = document.getElementById('iTargetSumber').value; const nominal = parseInt(document.getElementById('iTargetNominal').value, 10);
+    const targetIdx = state.targets.findIndex(t => t.id === id); if(targetIdx === -1) return false;
     if(sumber === 'TUNAI' && nominal > state.saldoTunai) { alert('Saldo Tunai Tidak Cukup!'); return false; }
     if(sumber === 'BANK' && nominal > state.saldoBank) { alert('Saldo Bank Tidak Cukup!'); return false; }
-    
-    // Potong Saldo
-    if(sumber === 'TUNAI') state.saldoTunai -= nominal;
-    else state.saldoBank -= nominal;
-    
-    // Tambah Terkumpul
+    if(sumber === 'TUNAI') state.saldoTunai -= nominal; else state.saldoBank -= nominal;
     state.targets[targetIdx].terkumpul += nominal;
-    
-    // Catat Riwayat
     const w = getWaktuLengkap();
-    state.riwayat.push({ 
-        id: meta.nextId++, waktu: w.jam, timestamp: w.timestamp, 
-        kategori: 'Setor Target', ket: `Isi Saldo Target: ${state.targets[targetIdx].nama}`, 
-        tipe: 'KELUAR', nominal, sumber: `TARGET_${sumber}` 
-    });
-    
-    document.getElementById('iTargetNominal').value = '';
-    commitLocalChange();
-    tutupModal('modalIsiTarget');
-    renderDaftarTarget();
-    return false;
+    state.riwayat.push({ id: meta.nextId++, waktu: w.jam, timestamp: w.timestamp, kategori: 'Setor Target', ket: `Isi Saldo Target: ${state.targets[targetIdx].nama}`, tipe: 'KELUAR', nominal, sumber: `TARGET_${sumber}` });
+    document.getElementById('iTargetNominal').value = ''; commitLocalChange(); tutupModal('modalIsiTarget'); renderDaftarTarget(); return false;
 };
 
 window.hapusTarget = function(id) {
-    if(!confirm("Yakin ingin menghapus target ini? (Uang yang terkumpul akan dikembalikan ke Saldo Tunai agar tidak hilang).")) return;
-    
-    const idx = state.targets.findIndex(t => t.id === id);
-    if(idx === -1) return;
-    
+    if(!confirm("Yakin ingin menghapus target ini? (Uang yang terkumpul akan dikembalikan ke Saldo Tunai).")) return;
+    const idx = state.targets.findIndex(t => t.id === id); if(idx === -1) return;
     const target = state.targets[idx];
     if(target.terkumpul > 0) {
-        // Kembalikan dana ke tunai
-        state.saldoTunai += target.terkumpul;
-        const w = getWaktuLengkap();
-        state.riwayat.push({ 
-            id: meta.nextId++, waktu: w.jam, timestamp: w.timestamp, 
-            kategori: 'Refund Target', ket: `Pembatalan/Hapus Target: ${target.nama}`, 
-            tipe: 'MASUK', nominal: target.terkumpul, sumber: 'REFUND_TARGET' 
-        });
+        state.saldoTunai += target.terkumpul; const w = getWaktuLengkap();
+        state.riwayat.push({ id: meta.nextId++, waktu: w.jam, timestamp: w.timestamp, kategori: 'Refund Target', ket: `Hapus Target: ${target.nama}`, tipe: 'MASUK', nominal: target.terkumpul, sumber: 'REFUND_TARGET' });
     }
-    
-    state.targets.splice(idx, 1);
-    commitLocalChange();
-    renderDaftarTarget();
+    state.targets.splice(idx, 1); commitLocalChange(); renderDaftarTarget();
 };
 
-// ---------------- REKAP & LAINNYA ---------------- //
+window.renderDaftarBon = function() {
+    const container = document.getElementById('listBonContainer');
+    if (!state.bons || state.bons.length === 0) {
+        container.innerHTML = '<div class="text-center py-10 text-slate-400 text-sm"><i class="fa-solid fa-book-open-reader text-4xl mb-3 text-slate-300"></i><p>Tidak ada catatan bon saat ini.</p></div>'; return;
+    }
+    let html = '';
+    state.bons.forEach(b => {
+        html += `
+        <div class="bg-white border border-rose-200 rounded-xl p-4 shadow-sm mb-3 relative overflow-hidden">
+            <div class="flex justify-between items-start mb-2">
+                <div>
+                    <h4 class="font-bold text-sm text-slate-800 uppercase">${b.nama}</h4>
+                    <p class="text-[11px] text-slate-500 font-mono mt-0.5"><i class="fa-regular fa-calendar mr-1"></i> ${b.tanggal}</p>
+                </div>
+                <strong class="text-rose-600 text-sm">${formatRp(b.nominal)}</strong>
+            </div>
+            <p class="text-xs text-slate-600 bg-slate-50 p-2 rounded border border-slate-100 mb-3">${b.ket}</p>
+            <button onclick="bukaModalBayarBon(${b.id}, '${b.nama}', ${b.nominal})" class="w-full py-2 bg-emerald-600 text-white rounded-lg text-xs font-bold hover:bg-emerald-700 transition"><i class="fa-solid fa-money-bill-wave mr-1"></i> Bayar Bon</button>
+        </div>`;
+    });
+    container.innerHTML = html;
+};
+
+window.handleTambahBon = function(e) {
+    e.preventDefault();
+    if(!state.bons) state.bons = [];
+    state.bons.push({
+        id: meta.nextId++,
+        nama: document.getElementById('tBonNama').value.trim(),
+        ket: document.getElementById('tBonKet').value.trim(),
+        nominal: parseInt(document.getElementById('tBonNominal').value, 10),
+        tanggal: new Date().toLocaleDateString('id-ID', {day: '2-digit', month: 'short', year: 'numeric'})
+    });
+    document.getElementById('tBonNama').value = ''; document.getElementById('tBonKet').value = ''; document.getElementById('tBonNominal').value = '';
+    commitLocalChange(); tutupModal('modalTambahBon'); renderDaftarBon();
+};
+
+window.bukaModalBayarBon = function(id, nama, nominal) {
+    document.getElementById('bBayarId').value = id;
+    document.getElementById('infoBayarBon').innerHTML = `Bayar bon atas nama <strong>${nama}</strong> sejumlah <strong>${formatRp(nominal)}</strong>`;
+    bukaModal('modalBayarBon');
+};
+
+window.handleBayarBon = function(e) {
+    e.preventDefault();
+    const id = parseInt(document.getElementById('bBayarId').value, 10);
+    const metode = document.getElementById('bBayarMetode').value;
+    const bonIdx = state.bons.findIndex(b => b.id === id);
+    if(bonIdx === -1) return false;
+    const bon = state.bons[bonIdx];
+
+    if(metode === 'TUNAI') state.saldoTunai += bon.nominal;
+    else state.saldoBank += bon.nominal;
+
+    const w = getWaktuLengkap();
+    state.riwayat.push({ 
+        id: meta.nextId++, waktu: w.jam, timestamp: w.timestamp, 
+        kategori: 'Pelunasan Bon', ket: `Pelunasan Bon: ${bon.nama} (${metode})`, 
+        tipe: 'MASUK', nominal: bon.nominal, sumber: `PELUNASAN_BON_${metode}` 
+    });
+    state.bons.splice(bonIdx, 1);
+    commitLocalChange(); tutupModal('modalBayarBon'); renderDaftarBon();
+    alert('✅ Bon berhasil dilunasi!');
+    return false;
+};
+
 window.renderRekap = function(periode) {
     document.querySelectorAll('.tab-rekap').forEach(b => { b.classList.remove('active', 'bg-white', 'shadow', 'text-blue-700'); b.classList.add('text-slate-500'); });
     const btn = document.getElementById('btnRekap' + (periode === 'hari' ? 'Hari' : periode === 'minggu' ? 'Minggu' : 'Bulan'));
     if (btn) { btn.classList.add('active', 'bg-white', 'shadow', 'text-blue-700'); btn.classList.remove('text-slate-500'); }
-    
     const now = new Date(); let mulai;
     if (periode === 'hari') mulai = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     else if (periode === 'minggu') mulai = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     else mulai = new Date(now.getFullYear(), now.getMonth(), 1);
-
     const filtered = (state.riwayat || []).filter(r => r.timestamp >= mulai.getTime() && r.sumber !== 'SETOR' && r.sumber !== 'KAS_LACI' && r.sumber !== 'REFUND_TARGET');
     const totalMasuk = filtered.filter(r => r.tipe === 'MASUK').reduce((s, r) => s + r.nominal, 0);
     const totalKeluar = filtered.filter(r => r.tipe === 'KELUAR').reduce((s, r) => s + r.nominal, 0);
-
     setElText('rekapMasuk', formatRp(totalMasuk));
     setElText('rekapKeluar', formatRp(totalKeluar));
     setElText('rekapSisa', formatRp(totalMasuk - totalKeluar));
-
     if (chartInstance) chartInstance.destroy();
     const ctx = document.getElementById('chartRekap').getContext('2d');
     chartInstance = new Chart(ctx, {
@@ -495,7 +473,7 @@ window.resetAplikasi = function() {
     if (!confirm('⚠️ SEMUA data di HP ini dan Cloud Firebase akan dihapus. Yakin?')) return;
     if (!confirm('Konfirmasi sekali lagi: HAPUS SEMUA DATA?')) return;
     localStorage.removeItem(STORAGE_KEY);
-    state = { saldoTunai: 0, saldoBank: 0, kasLaciAwal: 0, bersihHariIni: 0, qrisHariIni: 0, transferHariIni: 0, kategoriPengeluaran: ['Paket COD', 'Paket TF', 'Belanja Felik', 'Belanja Yuni', 'Belanja Gibran', 'Belanja Toko', 'Operasional', 'Lain-lain'], riwayat: [], targets: [] };
+    state = { saldoTunai: 0, saldoBank: 0, kasLaciAwal: 0, bersihHariIni: 0, qrisHariIni: 0, transferHariIni: 0, kategoriPengeluaran: ['Paket COD', 'Paket TF', 'Belanja Felik', 'Belanja Yuni', 'Belanja Gibran', 'Belanja Toko', 'Operasional', 'Lain-lain'], riwayat: [], targets: [], bons: [] };
     meta = { nextId: 1, isDirty: true, lastUpdated: Date.now() }; commitLocalChange(); location.reload();
 };
 

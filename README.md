@@ -1,2 +1,2 @@
 # 💰 Keuangan Garasi Fotocopy
-Aplikasi Kasir V400 dengan Fitur Target Impian.
+Aplikasi Kasir V501 - Fix Rollback Saldo Bon.
