@@ -1,2 +1,2 @@
 # 💰 Keuangan Garasi Fotocopy
-Aplikasi Kasir V501 - Fix Rollback Saldo Bon.
+Aplikasi Kasir V601 - Filter Riwayat Instan.

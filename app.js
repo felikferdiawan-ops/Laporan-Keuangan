@@ -9,7 +9,7 @@ const firebaseConfig = {
     databaseURL: "https://garasi-keuangan-default-rtdb.asia-southeast1.firebasedatabase.app"
 };
 
-const STORAGE_KEY = 'GARASI_FOTOCOPY_DATA_V501';
+const STORAGE_KEY = 'GARASI_FOTOCOPY_DATA_V601';
 let db = null, dbRef = null, isConnectedToCloud = false, chartInstance = null;
 
 let state = {
@@ -79,6 +79,7 @@ try {
                     simpanLokal(); renderSemua();
                     if(!document.getElementById('modalTargetLuar').classList.contains('hidden')) renderDaftarTarget();
                     if(!document.getElementById('modalBonLuar').classList.contains('hidden')) renderDaftarBon();
+                    if(!document.getElementById('modalRiwayatLengkap').classList.contains('hidden')) renderRiwayatLengkap();
                 }
             }
         });
@@ -138,8 +139,8 @@ function renderSemua() {
     setElText('setorTransfer', formatRp(state.transferHariIni));
     setElText('setorBankTotal', formatRp(subtotalBank));
     setElText('setorTotal', formatRp(subtotalTunai + subtotalBank));
-    setElText('totalTransaksi', `${state.riwayat ? state.riwayat.length : 0} transaksi`);
-    renderRiwayat();
+    
+    renderRiwayatHarian();
     renderKategoriDropdown();
 }
 
@@ -150,10 +151,20 @@ function renderKategoriDropdown() {
     (state.kategoriPengeluaran || []).forEach(k => { const opt = document.createElement('option'); opt.value = k; opt.textContent = k; sel.appendChild(opt); });
 }
 
-function renderRiwayat() {
+// RIWAYAT DASHBOARD (HANYA HARI INI)
+function renderRiwayatHarian() {
     const tbody = document.getElementById('tbodyRiwayat'); if (!tbody) return; tbody.innerHTML = '';
-    if (!state.riwayat || state.riwayat.length === 0) { tbody.innerHTML = '<tr><td colspan="5" class="text-center py-6 text-slate-400 font-medium">Belum ada transaksi</td></tr>'; return; }
-    state.riwayat.slice().reverse().forEach(item => {
+    const now = new Date();
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const endOfDay = startOfDay + 86399999;
+    const riwayatHariIni = (state.riwayat || []).filter(r => r.timestamp >= startOfDay && r.timestamp <= endOfDay);
+    
+    document.getElementById('totalTransaksi').innerText = riwayatHariIni.length + " trx hari ini";
+    if (riwayatHariIni.length === 0) { 
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center py-6 text-slate-400 font-medium">Belum ada transaksi hari ini</td></tr>'; return; 
+    }
+    
+    riwayatHariIni.slice().reverse().forEach(item => {
         const tr = document.createElement('tr');
         tr.className = "hover:bg-blue-50 transition border-b border-slate-50 last:border-0";
         let badge = item.tipe === 'MASUK' ? `<span class="text-emerald-600 font-bold">+${formatRp(item.nominal)}</span>` : 
@@ -170,6 +181,103 @@ function renderRiwayat() {
         tbody.appendChild(tr);
     });
 }
+
+function formatTanggalLengkap(ts) {
+    const d = new Date(ts);
+    return `${d.toLocaleDateString('id-ID', {day: '2-digit', month: '2-digit', year: 'numeric'})}<br><span class="text-[9px] text-slate-400">${d.toLocaleTimeString('id-ID', {hour: '2-digit', minute: '2-digit'})}</span>`;
+}
+
+// RIWAYAT LENGKAP & FILTER
+let filterTimeRange = '';
+
+window.bukaModalRiwayatLengkap = function() {
+    const sel = document.getElementById('filterKategori');
+    sel.innerHTML = '<option value="">Semua Kategori</option>';
+    const uniqueCats = [...new Set(state.riwayat.map(r => r.kategori))];
+    uniqueCats.sort().forEach(k => { sel.innerHTML += `<option value="${k}">${k}</option>`; });
+    
+    resetFilterRiwayat();
+    bukaModal('modalRiwayatLengkap');
+};
+
+window.resetFilterRiwayat = function() {
+    document.getElementById('filterTanggal').value = '';
+    document.getElementById('filterJenis').value = '';
+    document.getElementById('filterKategori').value = '';
+    filterTimeRange = '';
+    
+    document.querySelectorAll('.btn-filter-waktu').forEach(b => b.classList.remove('active'));
+    renderRiwayatLengkap();
+};
+
+window.setFilterWaktuRiwayat = function(rentang) {
+    filterTimeRange = rentang;
+    document.getElementById('filterTanggal').value = '';
+    document.querySelectorAll('.btn-filter-waktu').forEach(b => b.classList.remove('active'));
+    if(rentang === 'hari') document.getElementById('btnFilterHari').classList.add('active');
+    else if(rentang === 'minggu') document.getElementById('btnFilterMinggu').classList.add('active');
+    else if(rentang === 'bulan') document.getElementById('btnFilterBulan').classList.add('active');
+    renderRiwayatLengkap();
+};
+
+window.resetBtnWaktuLaluRender = function() {
+    filterTimeRange = '';
+    document.querySelectorAll('.btn-filter-waktu').forEach(b => b.classList.remove('active'));
+    renderRiwayatLengkap();
+};
+
+window.renderRiwayatLengkap = function() {
+    const tbody = document.getElementById('tbodyRiwayatLengkap');
+    tbody.innerHTML = '';
+
+    const fTanggal = document.getElementById('filterTanggal').value;
+    const fJenis = document.getElementById('filterJenis').value;
+    const fKategori = document.getElementById('filterKategori').value;
+
+    let filtered = state.riwayat.slice().reverse();
+
+    // 1. FILTER TANGGAL SPECIFIC (KALAU ADA)
+    if (fTanggal) {
+        const start = new Date(fTanggal).getTime();
+        const end = start + 86399999;
+        filtered = filtered.filter(r => r.timestamp >= start && r.timestamp <= end);
+    } 
+    // 2. FILTER RENTANG INSTAN (KALAU DIPILIH)
+    else if (filterTimeRange) {
+        const now = new Date(); let start = 0;
+        if(filterTimeRange === 'hari') start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+        else if(filterTimeRange === 'minggu') start = new Date(now.getTime() - (7 * 86400000)).getTime();
+        else if(filterTimeRange === 'bulan') start = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+        filtered = filtered.filter(r => r.timestamp >= start);
+    }
+
+    if (fJenis) filtered = filtered.filter(r => r.tipe === fJenis);
+    if (fKategori) filtered = filtered.filter(r => r.kategori === fKategori);
+
+    document.getElementById('totalTrxFilter').innerText = filtered.length + " transaksi";
+
+    if (filtered.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center py-10 text-slate-400">Tidak ada transaksi ditemukan</td></tr>'; return;
+    }
+
+    filtered.forEach(item => {
+        const tr = document.createElement('tr');
+        tr.className = "hover:bg-blue-50 transition border-b border-slate-50 last:border-0";
+        let badge = item.tipe === 'MASUK' ? `<span class="text-emerald-600 font-bold">+${formatRp(item.nominal)}</span>` : 
+                    item.tipe === 'KELUAR' ? `<span class="text-rose-600 font-bold">-${formatRp(item.nominal)}</span>` : 
+                    `<span class="text-slate-700 font-bold">${formatRp(item.nominal)}</span>`;
+        
+        tr.innerHTML = `<td class="py-2 px-3 font-mono text-slate-600 text-[10px] leading-tight">${formatTanggalLengkap(item.timestamp)}</td>
+                        <td class="py-2 px-3"><span class="px-1.5 py-0.5 rounded-md text-[9px] font-semibold bg-slate-200 text-slate-700 border border-slate-300">${item.kategori}</span></td>
+                        <td class="py-2 px-3 font-medium text-slate-800">${item.ket || ''}</td>
+                        <td class="py-2 px-3 text-right">${badge}</td>
+                        <td class="py-2 px-3 text-center whitespace-nowrap">
+                            <button type="button" onclick="bukaEditRiwayat(${item.id})" class="text-blue-600 hover:bg-blue-100 w-6 h-6 rounded"><i class="fa-solid fa-pen text-[10px]"></i></button>
+                            <button type="button" onclick="hapusRiwayat(${item.id})" class="text-rose-600 hover:bg-rose-100 w-6 h-6 rounded"><i class="fa-solid fa-trash text-[10px]"></i></button>
+                        </td>`;
+        tbody.appendChild(tr);
+    });
+};
 
 function bukaModal(id) {
     const m = document.getElementById(id); if (!m) return; m.classList.remove('hidden'); m.classList.add('flex');
@@ -251,15 +359,17 @@ window.handleEditRiwayat = function(e) {
     e.preventDefault(); const id = parseInt(document.getElementById('editId').value, 10); const newKet = document.getElementById('editKet').value; const newNominal = parseInt(document.getElementById('editNominal').value, 10);
     const item = state.riwayat.find(r => r.id === id); if (!item) return false;
     terapkanEfekSaldo(item, -item.nominal); item.nominal = newNominal; item.ket = newKet; terapkanEfekSaldo(item, item.nominal);
-    commitLocalChange(); tutupModal('modalEdit'); return false;
+    commitLocalChange(); tutupModal('modalEdit'); 
+    if(!document.getElementById('modalRiwayatLengkap').classList.contains('hidden')) renderRiwayatLengkap();
+    return false;
 };
 window.hapusRiwayat = function(id) {
     if (!confirm('Hapus transaksi ini? Saldo terkait akan menyesuaikan otomatis.')) return;
     const idx = state.riwayat.findIndex(r => r.id === id); if (idx === -1) return;
     terapkanEfekSaldo(state.riwayat[idx], -state.riwayat[idx].nominal); state.riwayat.splice(idx, 1); commitLocalChange();
+    if(!document.getElementById('modalRiwayatLengkap').classList.contains('hidden')) renderRiwayatLengkap();
 };
 
-// ============ LOGIKA ROLLBACK SALDO DIPERBARUI (V501) ============
 function terapkanEfekSaldo(item, nominal) {
     switch(item.sumber) {
         case 'KAS_LACI': state.saldoTunai -= nominal; state.kasLaciAwal += nominal; break;
@@ -272,7 +382,6 @@ function terapkanEfekSaldo(item, nominal) {
         case 'MANUAL_BANK': state.saldoBank += (item.tipe === 'MASUK' ? nominal : -nominal); break;
         case 'TARGET_TUNAI': state.saldoTunai -= nominal; break; 
         case 'TARGET_BANK': state.saldoBank -= nominal; break;
-        // PELUNASAN BON: apply add saldo, rollback minus saldo
         case 'PELUNASAN_BON_TUNAI': state.saldoTunai += nominal; break;
         case 'PELUNASAN_BON_BANK': state.saldoBank += nominal; break;
         case 'REFUND_TARGET': state.saldoTunai += nominal; break;
@@ -286,6 +395,7 @@ function terapkanEfekSaldo(item, nominal) {
     }
 }
 
+// ---------------- TARGET IMPIAN ---------------- //
 window.renderDaftarTarget = function() {
     const container = document.getElementById('listTargetContainer');
     if (!state.targets || state.targets.length === 0) {
