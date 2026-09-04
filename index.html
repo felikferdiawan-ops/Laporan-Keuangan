@@ -10,7 +10,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="style.css?v=601">
+    <link rel="stylesheet" href="style.css?v=700">
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
 </head>
@@ -80,7 +80,8 @@
             </div>
         </section>
 
-        <section class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <!-- MENU TOMBOL: Diubah menjadi grid 5 kolom di Desktop agar muat Pindah Dana -->
+        <section class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
             <button type="button" onclick="bukaModal('modalTransaksiTunai')" class="bg-slate-50 p-4 rounded-xl shadow border border-slate-300 hover:border-emerald-500 hover:bg-emerald-50 text-left transition group">
                 <i class="fa-solid fa-cash-register text-emerald-600 text-xl mb-2 group-hover:scale-110 transition-transform"></i>
                 <h3 class="font-bold text-sm text-slate-800">Kasir Tunai</h3>
@@ -95,6 +96,12 @@
                 <i class="fa-solid fa-sliders text-purple-600 text-xl mb-2 group-hover:scale-110 transition-transform"></i>
                 <h3 class="font-bold text-sm text-slate-800">Saldo Manual</h3>
                 <p class="text-[11px] text-slate-500 font-medium">Modal / Prive</p>
+            </button>
+            <!-- TOMBOL BARU: PINDAH DANA -->
+            <button type="button" onclick="bukaModal('modalMutasi')" class="bg-slate-50 p-4 rounded-xl shadow border border-slate-300 hover:border-blue-500 hover:bg-blue-50 text-left transition group">
+                <i class="fa-solid fa-right-left text-blue-600 text-xl mb-2 group-hover:scale-110 transition-transform"></i>
+                <h3 class="font-bold text-sm text-slate-800">Pindah Dana</h3>
+                <p class="text-[11px] text-slate-500 font-medium">Mutasi Tunai ⇄ Bank</p>
             </button>
             <button type="button" onclick="bukaModal('modalSetorkan')" class="bg-slate-50 p-4 rounded-xl shadow border border-slate-300 hover:border-amber-500 hover:bg-amber-50 text-left transition group">
                 <i class="fa-solid fa-hand-holding-dollar text-amber-600 text-xl mb-2 group-hover:scale-110 transition-transform"></i>
@@ -152,7 +159,7 @@
         </div>
     </div>
 
-    <!-- MODAL PENCARIAN SEMUA RIWAYAT TRANSAKSI (DIPERBARUI) -->
+    <!-- MODAL PENCARIAN SEMUA RIWAYAT -->
     <div id="modalRiwayatLengkap" class="fixed inset-0 bg-slate-900/60 hidden items-center justify-center p-4 z-50 backdrop-blur-sm">
         <div class="bg-white rounded-2xl max-w-2xl w-full p-5 shadow-2xl flex flex-col max-h-[95vh]">
             <div class="flex justify-between items-center border-b pb-3 mb-4">
@@ -175,6 +182,7 @@
                             <option value="">Semua Jenis (+/-)</option>
                             <option value="MASUK">Pemasukan (+)</option>
                             <option value="KELUAR">Pengeluaran (-)</option>
+                            <option value="MUTASI">Mutasi/Pindah (⇄)</option>
                         </select>
                     </div>
                     <div>
@@ -300,15 +308,89 @@
         </div>
     </div>
 
+    <!-- MODAL TRANSAKSI STANDAR -->
     <div id="modalKasLaci" class="fixed inset-0 bg-slate-900/60 hidden items-center justify-center p-4 z-50 backdrop-blur-sm"><div class="bg-white rounded-2xl max-w-sm w-full p-5 space-y-4"><h3 class="font-bold text-lg">💼 Ambil Kas Laci Awal</h3><form onsubmit="return handleKasLaciAwal(event)" class="space-y-3"><input type="number" id="inputKasLaci" required min="1" placeholder="cth: 500000" class="w-full border border-slate-300 rounded-lg p-2.5 text-sm"><div class="flex justify-end gap-2"><button type="button" onclick="tutupModal('modalKasLaci')" class="px-4 py-2 border rounded-lg text-xs font-semibold">Batal</button><button type="submit" class="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-semibold">Simpan</button></div></form></div></div>
+    
     <div id="modalTransaksiTunai" class="fixed inset-0 bg-slate-900/60 hidden items-center justify-center p-4 z-50 backdrop-blur-sm"><div class="bg-white rounded-2xl max-w-sm w-full p-5 space-y-4 max-h-[90vh] overflow-y-auto"><h3 class="font-bold text-lg">💵 Transaksi / Pengeluaran</h3><form onsubmit="return handleTransaksiTunai(event)" class="space-y-3"><div><label class="text-xs font-semibold text-slate-600">Jenis Transaksi</label><select id="inputJenisTunai" onchange="toggleKategoriTunai()" class="w-full mt-1 border border-slate-300 rounded-lg p-2.5 text-sm"><option value="MASUK">➕ Pemasukan (Penjualan Toko)</option><option value="KELUAR">➖ Pengeluaran (Belanja/Lainnya)</option></select></div><div id="containerKategoriTunai" class="hidden space-y-3"><div><label class="text-xs font-semibold text-slate-600">Kategori Pengeluaran</label><div class="flex gap-2 mt-1"><select id="inputKategoriTunai" class="flex-1 border border-slate-300 rounded-lg p-2.5 text-sm"></select><button type="button" onclick="tambahKategoriBaru('tunai')" class="px-3 bg-slate-200 rounded-lg text-xs font-semibold"><i class="fa-solid fa-plus"></i></button></div></div><div><label class="text-xs font-semibold text-slate-600">Pilih Sumber Dana</label><select id="inputSumberDanaTunai" class="w-full mt-1 border border-slate-300 rounded-lg p-2.5 text-sm bg-blue-50/50"><option value="TUNAI">💵 Potong dari Saldo Tunai</option><option value="BANK">🏦 Potong dari Rekening Bank</option></select></div></div><div><label class="text-xs font-semibold text-slate-600">Keterangan</label><input type="text" id="inputKetTunai" placeholder="Otomatis: Penjualan Toko" class="w-full mt-1 border border-slate-300 rounded-lg p-2.5 text-sm"></div><div><label class="text-xs font-semibold text-slate-600">Nominal (Rp)</label><input type="number" id="inputNominalTunai" required min="1" placeholder="cth: 50000" class="w-full mt-1 border border-slate-300 rounded-lg p-2.5 text-sm"></div><div class="flex justify-end gap-2 pt-2"><button type="button" onclick="tutupModal('modalTransaksiTunai')" class="px-4 py-2 border rounded-lg text-xs font-semibold">Batal</button><button type="submit" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold">Simpan</button></div></form></div></div>
+    
     <div id="modalTransaksiDigital" class="fixed inset-0 bg-slate-900/60 hidden items-center justify-center p-4 z-50 backdrop-blur-sm"><div class="bg-white rounded-2xl max-w-sm w-full p-5 space-y-4"><h3 class="font-bold text-lg">📱 Transaksi Digital</h3><form onsubmit="return handleTransaksiDigital(event)" class="space-y-3"><div><label class="text-xs font-semibold text-slate-600">Metode</label><select id="inputMetodeDigital" class="w-full mt-1 border border-slate-300 rounded-lg p-2.5 text-sm"><option value="QRIS">📱 QRIS Toko</option><option value="TRANSFER">💳 Transfer Bank</option></select></div><div><label class="text-xs font-semibold text-slate-600">Keterangan</label><input type="text" id="inputKetDigital" placeholder="Otomatis: Penjualan Toko" class="w-full mt-1 border border-slate-300 rounded-lg p-2.5 text-sm"></div><div><label class="text-xs font-semibold text-slate-600">Nominal (Rp)</label><input type="number" id="inputNominalDigital" required min="1" placeholder="cth: 75000" class="w-full mt-1 border border-slate-300 rounded-lg p-2.5 text-sm"></div><div class="flex justify-end gap-2 pt-2"><button type="button" onclick="tutupModal('modalTransaksiDigital')" class="px-4 py-2 border rounded-lg text-xs font-semibold">Batal</button><button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold">Simpan</button></div></form></div></div>
+    
     <div id="modalSaldoManual" class="fixed inset-0 bg-slate-900/60 hidden items-center justify-center p-4 z-50 backdrop-blur-sm"><div class="bg-white rounded-2xl max-w-sm w-full p-5 space-y-4"><h3 class="font-bold text-lg">💳 Saldo Manual</h3><form onsubmit="return handleSaldoManual(event)" class="space-y-3"><div><label class="text-xs font-semibold text-slate-600">Akun</label><select id="inputAkunManual" class="w-full mt-1 border border-slate-300 rounded-lg p-2.5 text-sm"><option value="TUNAI">💵 Saldo Tunai</option><option value="BANK">🏦 Rekening Bank</option></select></div><div><label class="text-xs font-semibold text-slate-600">Aksi</label><select id="inputAksiManual" class="w-full mt-1 border border-slate-300 rounded-lg p-2.5 text-sm"><option value="TAMBAH">➕ Tambah Saldo</option><option value="KURANG">➖ Kurangi Saldo</option></select></div><div><label class="text-xs font-semibold text-slate-600">Keterangan</label><input type="text" id="inputKetManual" placeholder="Otomatis: Setoran Modal" class="w-full mt-1 border border-slate-300 rounded-lg p-2.5 text-sm"></div><div><label class="text-xs font-semibold text-slate-600">Nominal (Rp)</label><input type="number" id="inputNominalManual" required min="1" placeholder="cth: 500000" class="w-full mt-1 border border-slate-300 rounded-lg p-2.5 text-sm"></div><div class="flex justify-end gap-2 pt-2"><button type="button" onclick="tutupModal('modalSaldoManual')" class="px-4 py-2 border rounded-lg text-xs font-semibold">Batal</button><button type="submit" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-semibold">Eksekusi</button></div></form></div></div>
-    <div id="modalSetorkan" class="fixed inset-0 bg-slate-900/60 hidden items-center justify-center p-4 z-50 backdrop-blur-sm"><div class="bg-white rounded-2xl max-w-sm w-full p-5 space-y-4"><div class="flex items-center gap-3 text-amber-600"><i class="fa-solid fa-triangle-exclamation text-2xl"></i><h3 class="font-bold text-lg text-slate-800">Tutup Kasir & Setor Harian</h3></div><div class="bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-xs space-y-2"><div class="space-y-1 pb-2 border-b border-slate-200"><p class="font-bold text-slate-700">💵 Setoran Uang Tunai (ke Saldo Tunai):</p><div class="flex justify-between text-slate-600 pl-2"><span>Kas Laci Awal:</span><strong id="setorKasLaci">Rp 0</strong></div><div class="flex justify-between text-slate-600 pl-2"><span>Bersih Tunai Hari Ini:</span><strong id="setorBersih">Rp 0</strong></div><div class="flex justify-between font-bold text-emerald-700 pl-2"><span>Subtotal Tunai:</span><span id="setorTunaiTotal">Rp 0</span></div></div><div class="space-y-1 pb-2 border-b border-slate-200"><p class="font-bold text-slate-700">🏦 Setoran Digital (ke Rekening Bank):</p><div class="flex justify-between text-slate-600 pl-2"><span>QRIS Hari Ini:</span><strong id="setorQris">Rp 0</strong></div><div class="flex justify-between text-slate-600 pl-2"><span>Transfer Hari Ini:</span><strong id="setorTransfer">Rp 0</strong></div><div class="flex justify-between font-bold text-blue-700 pl-2"><span>Subtotal Bank:</span><span id="setorBankTotal">Rp 0</span></div></div><div class="flex justify-between font-extrabold text-sm text-slate-900 pt-1"><span>Total Keseluruhan Setor:</span><span id="setorTotal" class="text-blue-700">Rp 0</span></div></div><p class="text-[11px] text-slate-500 italic">*Setelan kasir harian akan kembali ke Rp 0 setelah disetorkan.</p><div class="flex justify-end gap-2 pt-1"><button type="button" onclick="tutupModal('modalSetorkan')" class="px-4 py-2 border rounded-lg text-xs font-semibold">Batal</button><button type="button" onclick="eksekusiSetorkan()" class="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-semibold">Setorkan Sekarang</button></div></div></div>
+
+    <!-- MODAL PINDAH DANA (DEPOSIT) BARU -->
+    <div id="modalMutasi" class="fixed inset-0 bg-slate-900/60 hidden items-center justify-center p-4 z-50 backdrop-blur-sm">
+        <div class="bg-white rounded-2xl max-w-sm w-full p-5 space-y-4 shadow-2xl">
+            <h3 class="font-bold text-lg text-slate-800"><i class="fa-solid fa-right-left text-blue-600"></i> Pindah Dana</h3>
+            <form onsubmit="return handleMutasi(event)" class="space-y-3">
+                <div>
+                    <label class="text-xs font-semibold text-slate-600">Sumber Dana</label>
+                    <select id="mSumber" onchange="updateMutasiTujuan()" class="w-full mt-1 border border-slate-300 rounded-lg p-2.5 text-sm">
+                        <option value="TUNAI">💵 Saldo Tunai</option>
+                        <option value="BANK">🏦 Rekening Bank</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="text-xs font-semibold text-slate-600">Tujuan Dana</label>
+                    <div id="mTujuanDisplay" class="w-full mt-1 border border-slate-200 bg-slate-100 text-slate-500 rounded-lg p-2.5 text-sm cursor-not-allowed">
+                        🏦 Rekening Bank
+                    </div>
+                    <input type="hidden" id="mTujuanVal" value="BANK">
+                </div>
+                <div>
+                    <label class="text-xs font-semibold text-slate-600">Keterangan <span class="text-[10px] text-slate-400">(kosong = Transfer)</span></label>
+                    <input type="text" id="mKet" placeholder="Otomatis: Transfer" class="w-full mt-1 border border-slate-300 rounded-lg p-2.5 text-sm">
+                </div>
+                <div>
+                    <label class="text-xs font-semibold text-slate-600">Nominal (Rp)</label>
+                    <input type="number" id="mNominal" required min="1" placeholder="cth: 50000" class="w-full mt-1 border border-slate-300 rounded-lg p-2.5 text-sm">
+                </div>
+                <div class="flex justify-end gap-2 pt-2">
+                    <button type="button" onclick="tutupModal('modalMutasi')" class="px-4 py-2 border rounded-lg text-xs font-semibold">Batal</button>
+                    <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold">Pindahkan</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <div id="modalSetorkan" class="fixed inset-0 bg-slate-900/60 hidden items-center justify-center p-4 z-50 backdrop-blur-sm">
+        <div class="bg-white rounded-2xl max-w-sm w-full p-5 space-y-4">
+            <div class="flex items-center gap-3 text-amber-600">
+                <i class="fa-solid fa-triangle-exclamation text-2xl"></i>
+                <h3 class="font-bold text-lg text-slate-800">Tutup Kasir & Setor Harian</h3>
+            </div>
+            <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-xs space-y-2">
+                <div class="space-y-1 pb-2 border-b border-slate-200">
+                    <p class="font-bold text-slate-700">💵 Setoran Uang Tunai (ke Saldo Tunai):</p>
+                    <div class="flex justify-between text-slate-600 pl-2"><span>Kas Laci Awal:</span><strong id="setorKasLaci">Rp 0</strong></div>
+                    <div class="flex justify-between text-slate-600 pl-2"><span>Bersih Tunai Hari Ini:</span><strong id="setorBersih">Rp 0</strong></div>
+                    <div class="flex justify-between font-bold text-emerald-700 pl-2"><span>Subtotal Tunai:</span><span id="setorTunaiTotal">Rp 0</span></div>
+                </div>
+                <div class="space-y-1 pb-2 border-b border-slate-200">
+                    <p class="font-bold text-slate-700">🏦 Setoran Digital (ke Rekening Bank):</p>
+                    <div class="flex justify-between text-slate-600 pl-2"><span>QRIS Hari Ini:</span><strong id="setorQris">Rp 0</strong></div>
+                    <div class="flex justify-between text-slate-600 pl-2"><span>Transfer Hari Ini:</span><strong id="setorTransfer">Rp 0</strong></div>
+                    <div class="flex justify-between font-bold text-blue-700 pl-2"><span>Subtotal Bank:</span><span id="setorBankTotal">Rp 0</span></div>
+                </div>
+                <div class="flex justify-between font-extrabold text-sm text-slate-900 pt-1">
+                    <span>Total Keseluruhan Setor:</span>
+                    <span id="setorTotal" class="text-blue-700">Rp 0</span>
+                </div>
+            </div>
+            <p class="text-[11px] text-slate-500 italic">*Setelan kasir harian akan kembali ke Rp 0 setelah disetorkan.</p>
+            <div class="flex justify-end gap-2 pt-1">
+                <button type="button" onclick="tutupModal('modalSetorkan')" class="px-4 py-2 border rounded-lg text-xs font-semibold">Batal</button>
+                <button type="button" onclick="eksekusiSetorkan()" class="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-semibold">Setorkan Sekarang</button>
+            </div>
+        </div>
+    </div>
+    
     <div id="modalRekap" class="fixed inset-0 bg-slate-900/60 hidden items-center justify-center p-4 z-50 backdrop-blur-sm"><div class="bg-white rounded-2xl max-w-lg w-full p-5 space-y-4 max-h-[95vh] overflow-y-auto"><div class="flex justify-between items-center"><h3 class="font-bold text-lg flex items-center gap-2"><i class="fa-solid fa-chart-pie text-blue-600"></i> Rekap Laporan</h3><button type="button" onclick="tutupModal('modalRekap')"><i class="fa-solid fa-xmark text-xl"></i></button></div><div class="grid grid-cols-3 gap-2 bg-slate-100 p-1 rounded-lg border border-slate-200"><button type="button" onclick="renderRekap('hari')" id="btnRekapHari" class="tab-rekap py-2 text-xs font-semibold">Hari Ini</button><button type="button" onclick="renderRekap('minggu')" id="btnRekapMinggu" class="tab-rekap py-2 text-xs font-semibold">7 Hari</button><button type="button" onclick="renderRekap('bulan')" id="btnRekapBulan" class="tab-rekap py-2 text-xs font-semibold">Bulanan</button></div><div class="relative" style="height: 250px;"><canvas id="chartRekap"></canvas></div><div class="grid grid-cols-3 gap-2"><div class="bg-blue-50 border border-blue-200 rounded-xl p-3 text-center"><p class="text-[11px] font-semibold text-blue-700 uppercase">Masuk</p><p class="text-sm font-bold text-blue-900" id="rekapMasuk">Rp 0</p></div><div class="bg-rose-50 border border-rose-200 rounded-xl p-3 text-center"><p class="text-[11px] font-semibold text-rose-700 uppercase">Keluar</p><p class="text-sm font-bold text-rose-900" id="rekapKeluar">Rp 0</p></div><div class="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-center"><p class="text-[11px] font-semibold text-emerald-700 uppercase">Sisa</p><p class="text-sm font-bold text-emerald-900" id="rekapSisa">Rp 0</p></div></div></div></div>
+    
     <div id="modalSetelan" class="fixed inset-0 bg-slate-900/60 hidden items-center justify-center p-4 z-50 backdrop-blur-sm"><div class="bg-white rounded-2xl max-w-sm w-full p-5 space-y-4"><div class="flex justify-between items-center"><h3 class="font-bold text-lg"><i class="fa-solid fa-gear"></i> Setelan Aplikasi</h3><button type="button" onclick="tutupModal('modalSetelan')"><i class="fa-solid fa-xmark text-xl"></i></button></div><div class="space-y-2"><button type="button" onclick="backupData()" class="w-full flex items-center gap-3 p-3 rounded-lg border hover:bg-blue-50 text-left"><div class="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center text-blue-600"><i class="fa-solid fa-download"></i></div><div><p class="font-semibold text-sm">Backup Data</p><p class="text-xs text-slate-500">Unduh .json</p></div></button><label class="w-full flex items-center gap-3 p-3 rounded-lg border hover:bg-emerald-50 text-left cursor-pointer"><div class="w-10 h-10 bg-emerald-100 rounded-lg flex items-center justify-center text-emerald-600"><i class="fa-solid fa-upload"></i></div><div><p class="font-semibold text-sm">Restore Data</p><p class="text-xs text-slate-500">Muat dari .json</p></div><input type="file" accept=".json" onchange="restoreData(event)" class="hidden"></label><button type="button" onclick="resetAplikasi()" class="w-full flex items-center gap-3 p-3 rounded-lg border border-rose-200 hover:bg-rose-50 text-left"><div class="w-10 h-10 bg-rose-100 rounded-lg flex items-center justify-center text-rose-600"><i class="fa-solid fa-trash-can"></i></div><div><p class="font-semibold text-sm text-rose-700">Reset Aplikasi</p><p class="text-xs text-slate-500">Kembalikan ke Rp 0</p></div></button></div></div></div>
+    
     <div id="modalEdit" class="fixed inset-0 bg-slate-900/60 hidden items-center justify-center p-4 z-50 backdrop-blur-sm"><div class="bg-white rounded-2xl max-w-sm w-full p-5 space-y-4"><h3 class="font-bold text-lg">✏️ Edit Transaksi</h3><form onsubmit="return handleEditRiwayat(event)" class="space-y-3"><input type="hidden" id="editId"><div><label class="text-xs font-semibold text-slate-600">Keterangan</label><input type="text" id="editKet" required class="w-full border border-slate-300 rounded-lg p-2.5 text-sm mt-1"></div><div><label class="text-xs font-semibold text-slate-600">Nominal (Rp)</label><input type="number" id="editNominal" required min="1" class="w-full border border-slate-300 rounded-lg p-2.5 text-sm mt-1"></div><div class="flex justify-end gap-2 pt-2"><button type="button" onclick="tutupModal('modalEdit')" class="px-4 py-2 border rounded-lg text-xs font-semibold">Batal</button><button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold">Simpan</button></div></form></div></div>
 
-    <script src="app.js?v=601"></script>
+    <!-- Script Utama -->
+    <script src="app.js?v=700"></script>
 </body>
 </html>

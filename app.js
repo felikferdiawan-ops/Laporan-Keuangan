@@ -9,7 +9,7 @@ const firebaseConfig = {
     databaseURL: "https://garasi-keuangan-default-rtdb.asia-southeast1.firebasedatabase.app"
 };
 
-const STORAGE_KEY = 'GARASI_FOTOCOPY_DATA_V601';
+const STORAGE_KEY = 'GARASI_FOTOCOPY_DATA_V700';
 let db = null, dbRef = null, isConnectedToCloud = false, chartInstance = null;
 
 let state = {
@@ -160,6 +160,7 @@ function renderRiwayatHarian() {
     const riwayatHariIni = (state.riwayat || []).filter(r => r.timestamp >= startOfDay && r.timestamp <= endOfDay);
     
     document.getElementById('totalTransaksi').innerText = riwayatHariIni.length + " trx hari ini";
+
     if (riwayatHariIni.length === 0) { 
         tbody.innerHTML = '<tr><td colspan="5" class="text-center py-6 text-slate-400 font-medium">Belum ada transaksi hari ini</td></tr>'; return; 
     }
@@ -169,7 +170,7 @@ function renderRiwayatHarian() {
         tr.className = "hover:bg-blue-50 transition border-b border-slate-50 last:border-0";
         let badge = item.tipe === 'MASUK' ? `<span class="text-emerald-600 font-bold">+${formatRp(item.nominal)}</span>` : 
                     item.tipe === 'KELUAR' ? `<span class="text-rose-600 font-bold">-${formatRp(item.nominal)}</span>` : 
-                    `<span class="text-slate-700 font-bold">${formatRp(item.nominal)}</span>`;
+                    `<span class="text-blue-600 font-bold">⇄ ${formatRp(item.nominal)}</span>`; // MUTASI BADGE
         tr.innerHTML = `<td class="py-3 px-4 font-mono text-slate-500 text-[11px]">${item.waktu}</td>
                         <td class="py-3 px-4"><span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-200 text-slate-700 border border-slate-300">${item.kategori}</span></td>
                         <td class="py-3 px-4 font-medium text-slate-800">${item.ket || ''}</td>
@@ -236,14 +237,11 @@ window.renderRiwayatLengkap = function() {
 
     let filtered = state.riwayat.slice().reverse();
 
-    // 1. FILTER TANGGAL SPECIFIC (KALAU ADA)
     if (fTanggal) {
         const start = new Date(fTanggal).getTime();
         const end = start + 86399999;
         filtered = filtered.filter(r => r.timestamp >= start && r.timestamp <= end);
-    } 
-    // 2. FILTER RENTANG INSTAN (KALAU DIPILIH)
-    else if (filterTimeRange) {
+    } else if (filterTimeRange) {
         const now = new Date(); let start = 0;
         if(filterTimeRange === 'hari') start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
         else if(filterTimeRange === 'minggu') start = new Date(now.getTime() - (7 * 86400000)).getTime();
@@ -265,7 +263,7 @@ window.renderRiwayatLengkap = function() {
         tr.className = "hover:bg-blue-50 transition border-b border-slate-50 last:border-0";
         let badge = item.tipe === 'MASUK' ? `<span class="text-emerald-600 font-bold">+${formatRp(item.nominal)}</span>` : 
                     item.tipe === 'KELUAR' ? `<span class="text-rose-600 font-bold">-${formatRp(item.nominal)}</span>` : 
-                    `<span class="text-slate-700 font-bold">${formatRp(item.nominal)}</span>`;
+                    `<span class="text-blue-600 font-bold">⇄ ${formatRp(item.nominal)}</span>`; // MUTASI BADGE
         
         tr.innerHTML = `<td class="py-2 px-3 font-mono text-slate-600 text-[10px] leading-tight">${formatTanggalLengkap(item.timestamp)}</td>
                         <td class="py-2 px-3"><span class="px-1.5 py-0.5 rounded-md text-[9px] font-semibold bg-slate-200 text-slate-700 border border-slate-300">${item.kategori}</span></td>
@@ -287,6 +285,7 @@ function tutupModal(id) {
     const m = document.getElementById(id); if (!m) return; m.classList.add('hidden'); m.classList.remove('flex');
 }
 
+// ---------------- TRANSAKSI HANDLERS ---------------- //
 window.handleKasLaciAwal = function(e) {
     e.preventDefault(); const nominal = parseInt(document.getElementById('inputKasLaci').value, 10);
     if (nominal > state.saldoTunai) { alert('Saldo Tunai tidak cukup!'); return false; }
@@ -341,6 +340,44 @@ window.handleSaldoManual = function(e) {
     document.getElementById('inputKetManual').value = ''; document.getElementById('inputNominalManual').value = ''; commitLocalChange(); tutupModal('modalSaldoManual'); return false;
 };
 
+// FITUR BARU: PINDAH DANA
+window.updateMutasiTujuan = function() {
+    const sumber = document.getElementById('mSumber').value;
+    const tDisplay = document.getElementById('mTujuanDisplay');
+    const tVal = document.getElementById('mTujuanVal');
+    if(sumber === 'TUNAI') {
+        tDisplay.innerText = '🏦 Rekening Bank';
+        tVal.value = 'BANK';
+    } else {
+        tDisplay.innerText = '💵 Saldo Tunai';
+        tVal.value = 'TUNAI';
+    }
+};
+
+window.handleMutasi = function(e) {
+    e.preventDefault();
+    const sumber = document.getElementById('mSumber').value;
+    const tujuan = document.getElementById('mTujuanVal').value;
+    let ket = document.getElementById('mKet').value.trim();
+    const nominal = parseInt(document.getElementById('mNominal').value, 10);
+    
+    if(!ket) ket = 'Transfer';
+    
+    if (sumber === 'TUNAI') {
+        if(nominal > state.saldoTunai) { alert('Saldo Tunai Tidak Cukup!'); return false; }
+        state.saldoTunai -= nominal; state.saldoBank += nominal;
+    } else {
+        if(nominal > state.saldoBank) { alert('Rekening Bank Tidak Cukup!'); return false; }
+        state.saldoBank -= nominal; state.saldoTunai += nominal;
+    }
+    
+    const w = getWaktuLengkap();
+    const typeSumb = sumber === 'TUNAI' ? 'MUTASI_TUNAI_KE_BANK' : 'MUTASI_BANK_KE_TUNAI';
+    
+    state.riwayat.push({ id: meta.nextId++, waktu: w.jam, timestamp: w.timestamp, kategori: 'Mutasi', ket: `Pindah Dana (${sumber} ➔ ${tujuan}): ${ket}`, tipe: 'MUTASI', nominal: nominal, sumber: typeSumb });
+    document.getElementById('mKet').value = ''; document.getElementById('mNominal').value = ''; commitLocalChange(); tutupModal('modalMutasi'); return false;
+};
+
 window.eksekusiSetorkan = function() {
     const totalTunaiSetor = (state.kasLaciAwal || 0) + (state.bersihHariIni || 0); const totalBankSetor = (state.qrisHariIni || 0) + (state.transferHariIni || 0);
     state.saldoTunai += totalTunaiSetor; state.saldoBank += totalBankSetor;
@@ -351,6 +388,7 @@ window.eksekusiSetorkan = function() {
     commitLocalChange(); tutupModal('modalSetorkan'); alert('✅ Penutupan kasir berhasil!');
 };
 
+// ---------------- EDIT & HAPUS ---------------- //
 window.bukaEditRiwayat = function(id) {
     const item = state.riwayat.find(r => r.id === id); if (!item) return;
     document.getElementById('editId').value = id; document.getElementById('editKet').value = item.ket; document.getElementById('editNominal').value = item.nominal; bukaModal('modalEdit');
@@ -385,6 +423,8 @@ function terapkanEfekSaldo(item, nominal) {
         case 'PELUNASAN_BON_TUNAI': state.saldoTunai += nominal; break;
         case 'PELUNASAN_BON_BANK': state.saldoBank += nominal; break;
         case 'REFUND_TARGET': state.saldoTunai += nominal; break;
+        case 'MUTASI_TUNAI_KE_BANK': state.saldoTunai -= nominal; state.saldoBank += nominal; break; // ROLLBACK EFEK PINDAH DANA
+        case 'MUTASI_BANK_KE_TUNAI': state.saldoBank -= nominal; state.saldoTunai += nominal; break;
         case 'SETOR':
             if (item.nominalTunai !== undefined && item.nominalBank !== undefined) { 
                 const ratio = item.nominal > 0 ? (nominal / item.nominal) : 1; 

@@ -1,5 +1,5 @@
-const CACHE_NAME = 'garasi-keuangan-v601';
-const ASSETS = ['./', './index.html', './style.css?v=601', './app.js?v=601', './manifest.json', './logo.png', './icon-192.png', './icon-512.png'];
+const CACHE_NAME = 'garasi-keuangan-v700';
+const ASSETS = ['./', './index.html', './style.css?v=700', './app.js?v=700', './manifest.json', './logo.png', './icon-192.png', './icon-512.png'];
 self.addEventListener('install', (e) => { self.skipWaiting(); e.waitUntil(caches.open(CACHE_NAME).then(c => c.addAll(ASSETS))); });
 self.addEventListener('activate', (e) => { e.waitUntil(caches.keys().then(k => Promise.all(k.filter(x => x !== CACHE_NAME).map(x => caches.delete(x)))).then(() => self.clients.claim())); });
 self.addEventListener('fetch', (e) => {

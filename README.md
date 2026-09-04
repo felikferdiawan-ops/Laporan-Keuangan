@@ -1,2 +1,2 @@
 # 💰 Keuangan Garasi Fotocopy
-Aplikasi Kasir V601 - Filter Riwayat Instan.
+Aplikasi Kasir V700 - Fitur Pindah Dana (Mutasi).
